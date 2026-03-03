@@ -1,6 +1,6 @@
 # 🛡️IntranetAdmin - High-End Intranet Administration Console
 
- IntranetAdmin is a professional, secure-by-design administration portal for CIT intranets. It provides real-time network visibility, device control, and an automated agent deployment pipeline through a high-end "Tier 1" SaaS user experience.
+ IntranetAdmin is a professional, secure-by-design administration portal for local intranets. It provides real-time network visibility, device control, and an automated agent deployment pipeline through a high-end "Tier 1" SaaS user experience.
 
 ---
 
@@ -8,7 +8,7 @@
 
 - **🌐 Live Network Topology**: Dynamic force-directed graph visualizing relationships between Servers, Switches, and End-user PC Nodes.
 - **💻 Proactive Device Control**: Remote execution of administrative actions including USB storage blocking, Internet access policy enforcement, and remote Power actions (Reboot/Shutdown).
-- **🚀 Automated Agent Pipeline**: Integrated "Download Center" providing pre-compiled, static binaries for Windows 7, 10, and 11.
+- **🚀 Automated Agent Pipeline**: Integrated "Download Center" providing pre-compiled, static binaries for Windows 7,8, 10, and 11.
 - **🛡️ Enterprise Security**: Hardcoded SHARED_SECRET authentication optimized for closed intranet environments.
 - **🎨 Elite UI/UX**: Deep Glassmorphism aesthetic, Dark Mode by default, and smooth Framer Motion micro-interactions.
 
