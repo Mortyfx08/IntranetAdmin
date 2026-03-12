@@ -75,7 +75,7 @@ agent_win10.exe -uninstall
 
 ### 2. Services Management
 Navigate to "Services" to:
-- View GMI, GCS, GEI groupements
+- View Devisions
 - Create new services/bureaus
 - Assign devices to services
 - View devices per service
