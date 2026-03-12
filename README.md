@@ -6,7 +6,7 @@
 
 
 
-     ![AAAA](https://github.com/user-attachments/assets/20806202-aa07-4296-bcaf-2720310bf425)
+![AAAA](https://github.com/user-attachments/assets/20806202-aa07-4296-bcaf-2720310bf425)
 
  IntranetAdmin is a professional, secure-by-design administration portal for local intranets. It provides real-time network visibility, device control, and an automated agent deployment pipeline through a high-end "Tier 1" SaaS user experience.
 
