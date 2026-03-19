@@ -5,6 +5,7 @@ from sqlalchemy import select, update, delete
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ProcessPoolExecutor as _PPE
 import asyncio
+import socket
 import logging
 from datetime import datetime, timedelta
 
@@ -17,7 +18,7 @@ from backend.database import async_session, engine
 from pydantic import BaseModel
 
 # Persistent scan worker pool (pre-warmed at startup)
-_SCAN_POOL: _PPE = None
+_SCAN_POOL: Optional[_PPE] = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -143,20 +144,42 @@ def get_ethernet_ip() -> tuple:
     except Exception as e:
         logger.warning(f"get_ethernet_ip failed: {e}")
 
-    # Fallback
-    try:
-        import socket as _s
-        sock = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        octets = ip.split('.')
-        return ip, f"{octets[0]}.{octets[1]}.{octets[2]}.0/24"
-    except Exception:
-        return "127.0.0.1", "127.0.0.1/32"
-
 def _get_ip_fast() -> tuple:
-    """Pure-socket IP detection — runs at import time, zero Scapy dependency."""
+    """Detection logic using psutil to prioritize Ethernet over Wi-Fi/Virtual."""
+    try:
+        import psutil
+        addrs = psutil.net_if_addrs()
+        candidates = []
+        for iface_name, iface_addrs in addrs.items():
+            for addr in iface_addrs:
+                if addr.family == 2:  # AF_INET
+                    ip = addr.address
+                    if ip.startswith('127.') or ip.startswith('169.254'):
+                        continue
+                    
+                    name_l = iface_name.lower()
+                    # Priority: 1. Real Ethernet (not virtual), 2. Local Area Connection, 3. Virtual/Wi-Fi
+                    SKIP = ('virtual', 'switch', 'vbox', 'vmware', 'hyper-v', 'wlan', 'wi-fi')
+                    is_virtual = any(k in name_l for k in SKIP)
+                    
+                    if ('ethernet' in name_l or 'réseau local' in name_l) and not is_virtual:
+                        score = 4
+                    elif is_virtual:
+                        score = 1
+                    else:
+                        score = 2
+                    
+                    candidates.append((score, ip))
+        
+        if candidates:
+            candidates.sort(reverse=True)
+            best_ip = candidates[0][1]
+            octets = best_ip.split('.')
+            return best_ip, f"{octets[0]}.{octets[1]}.{octets[2]}.0/24"
+    except Exception:
+        pass
+
+    # Socket fallback (standard default route)
     try:
         import socket as _s
         sock = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
@@ -168,8 +191,8 @@ def _get_ip_fast() -> tuple:
     except Exception:
         return "127.0.0.1", "127.0.0.1/32"
 
-# Fast detection at import time (no Scapy — never blocks uvicorn)
 _SERVER_IP, SUBNET_TO_SCAN = _get_ip_fast()
+
 logger.info(f"Server IP (fast): {_SERVER_IP}  Subnet: {SUBNET_TO_SCAN}")
 
 @app.get("/")
@@ -229,6 +252,7 @@ async def update_devision(dev_id: int, devision: schemas.DevisionCreate, db: Ses
 async def delete_devision(dev_id: int, db: Session = Depends(get_db)):
     await db.execute(delete(models.Devision).filter(models.Devision.id == dev_id))
     await db.commit()
+    await manager.broadcast({"type": "topology_refresh"})
     return {"status": "ok"}
 
 # --- Services ---
@@ -278,6 +302,7 @@ async def delete_service(service_id: int, db: Session = Depends(get_db)):
     )
     await db.execute(delete(models.Service).filter(models.Service.id == service_id))
     await db.commit()
+    await manager.broadcast({"type": "topology_refresh"})
     return {"status": "ok"}
 
 @app.delete("/api/devices/by-id/{device_id}")
@@ -289,6 +314,7 @@ async def delete_device_by_id(device_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Device not found")
     await db.execute(delete(models.Device).filter(models.Device.id == device_id))
     await db.commit()
+    await manager.broadcast({"type": "topology_refresh"})
     return {"status": "ok", "deleted": dev.hostname or dev.ip_address}
 
 @app.delete("/api/devices/{mac}")
@@ -302,6 +328,7 @@ async def delete_device(mac: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Device not found: {decoded_mac}")
     await db.execute(delete(models.Device).filter(models.Device.mac_address == decoded_mac))
     await db.commit()
+    await manager.broadcast({"type": "topology_refresh"})
     return {"status": "ok", "deleted": dev.hostname or dev.ip_address}
 
 @app.patch("/api/devices/{mac}/assign")
@@ -481,7 +508,12 @@ async def report_agent(
     update_data = report.dict(exclude={"mac_address"})
     update_data["last_seen"] = datetime.utcnow()
     update_data["status"] = "online"
+    update_data["agent_status"] = "online" # SOURCE OF TRUTH for agent process
     update_data["has_agent"] = True  # mark as agent-managed device
+    
+    msg = f"[!!! HEARTBEAT !!!] {datetime.now().strftime('%H:%M:%S')} - Host: {report.hostname} | IP: {report.ip_address}"
+    print(msg)
+    logger.info(msg)
 
     if report.ip_address == _SERVER_IP:
         update_data["hostname"] = "IntranetAdmin"
@@ -494,9 +526,17 @@ async def report_agent(
         device = models.Device(mac_address=report.mac_address, **update_data)
         db.add(device)
     
-    await db.flush()
-    await db.commit()   # persist agent heartbeat data to disk
-    await db.refresh(device)
+    try:
+        # We rely on get_db dependency to commit the final state.
+        # This reduces redundant write locks on the DB for high reporting frequency.
+        pass 
+    except Exception as e:
+        if "locked" in str(e).lower():
+            logger.debug(f"DB locked during agent {report.hostname} check-in. Agent will retry.")
+            await db.rollback()
+            raise HTTPException(status_code=503, detail="Database locked")
+        raise
+    
     
     # Fetch pending commands
     cmd_result = await db.execute(
@@ -512,7 +552,8 @@ async def report_agent(
         pending_cmds.append({"id": cmd.id, "command": cmd.command, "params": cmd.params})
         cmd.status = "sent"
     
-    await db.commit()   # persist command status updates
+    # Command status changes will also be committed by the dependency
+    pass
     
     # Broadcast update to UI
     await manager.broadcast({
@@ -881,37 +922,32 @@ async def scan_ports_endpoint(ip: str):
 @app.get("/api/network-map", response_model=schemas.NetworkMap)
 async def get_network_map(db: Session = Depends(get_db)):
     """Returns a rich hierarchical network map: Server → Groupements → Services → Devices"""
-    import socket
-
     server_ip = _SERVER_IP
-    print(">>> /api/network-map START", flush=True)
 
-    print(">>> Querying devices...", flush=True)
-    dev_result = await db.execute(
-        select(models.Device).filter(models.Device.has_agent == True)
-    )
+    dev_result = await db.execute(select(models.Device))
     devices = dev_result.scalars().all()
 
-    print(">>> Querying services...", flush=True)
     svc_result = await db.execute(select(models.Service))
     services = svc_result.scalars().all()
 
-    print(">>> Querying devisions...", flush=True)
     grp_result = await db.execute(select(models.Devision))
     groupements = grp_result.scalars().all()
 
-    print(">>> Querying topology positions...", flush=True)
     pos_result = await db.execute(select(models.TopologyPosition))
     positions = {p.node_id: (p.x, p.y) for p in pos_result.scalars().all()}
-    print(">>> Queries finished!", flush=True)
 
     nodes = []
     links = []
 
     # Identify the Server Agent device record natively via hostname
     local_hostname = socket.gethostname()
-    server_device = next((d for d in devices if d.hostname and d.hostname.lower() == local_hostname.lower() or d.hostname == "IntranetAdmin" or d.ip_address == server_ip or d.ip_address == "127.0.0.1"), None)
-
+    server_device = None
+    if devices:
+        server_device = next((d for d in devices if (d.hostname and d.hostname.lower() == local_hostname.lower()) or 
+                                                     d.hostname == "IntranetAdmin" or 
+                                                     d.ip_address == server_ip or 
+                                                     d.ip_address == "127.0.0.1"), None)
+    
     # Helper to get saved position
     def get_pos(node_id):
         return positions.get(node_id, (None, None))
@@ -923,7 +959,7 @@ async def get_network_map(db: Session = Depends(get_db)):
         group=1,
         level=1,
         label="IntranetAdmin",
-        ip_address=server_device.ip_address if server_device else server_ip,
+        ip_address=server_device.ip_address if (server_device and server_device.ip_address) else server_ip,
         status=server_device.status if server_device else "offline",
         color="#1890ff",
         mac_address=server_device.mac_address if server_device else None,
@@ -937,6 +973,9 @@ async def get_network_map(db: Session = Depends(get_db)):
         rdp_enabled=server_device.rdp_enabled if server_device else True,
         is_isolated=server_device.is_isolated if server_device else False,
         saved_password=server_device.saved_password if server_device else None,
+        device_id=server_device.id if server_device else None,
+        agent_status=server_device.agent_status if server_device else "offline",
+        has_agent=server_device.has_agent if server_device else False,
         pos_x=s_px, pos_y=s_py
     ))
 
@@ -1036,6 +1075,8 @@ async def get_network_map(db: Session = Depends(get_db)):
             service_color=svc_color,
             mac_address=dev.mac_address,
             device_id=dev.id,
+            agent_status=dev.agent_status,
+            has_agent=dev.has_agent,
             pos_x=d_px, pos_y=d_py
         ))
         links.append(schemas.NetworkLink(source=parent, target=dev.mac_address))
@@ -1139,42 +1180,124 @@ async def startup_event():
 
     # ── Heartbeat Monitor: mark agent devices offline if stale ────────────────
     async def _heartbeat_monitor():
-        """Fast sync: 10s without heartbeat → offline, check every 3s."""
+        """Fast sync: 30s without heartbeat → offline, check every 3s."""
         OFFLINE_AFTER_SECONDS = 30    # 30 seconds without a heartbeat → offline
         CHECK_INTERVAL = 3            # run every 3 seconds for real-time status
 
         while True:
             await asyncio.sleep(CHECK_INTERVAL)
-            try:
-                async with async_session() as session:
-                    cutoff = datetime.utcnow() - timedelta(seconds=OFFLINE_AFTER_SECONDS)
-                    result = await session.execute(
-                        select(models.Device).filter(
-                            models.Device.has_agent == True,
-                            models.Device.status == "online",
-                            models.Device.last_seen < cutoff,
+            devices_to_broadcast = []
+            for attempt in range(5):
+                try:
+                    async with async_session() as session:
+                        cutoff = datetime.utcnow() - timedelta(seconds=OFFLINE_AFTER_SECONDS)
+                        result = await session.execute(
+                            select(models.Device).filter(
+                                models.Device.has_agent == True,
+                                models.Device.status == "online",
+                                models.Device.last_seen < cutoff,
+                            )
                         )
-                    )
-                    stale_devices = result.scalars().all()
-                    if stale_devices:
-                        for dev in stale_devices:
-                            dev.status = "offline"
-                            logger.info(f"[Heartbeat] {dev.hostname or dev.ip_address} marked offline (last seen: {dev.last_seen})")
-                        await session.commit()
-                        # Broadcast each offline device to the UI
-                        for dev in stale_devices:
-                            await manager.broadcast({
-                                "type": "device_update",
-                                "device": schemas.DeviceSchema.from_orm(dev).dict()
-                            })
-            except Exception as e:
-                logger.error(f"[Heartbeat] Error in monitor: {e}")
+                        stale_devices = result.scalars().all()
+                        if stale_devices:
+                            for dev in stale_devices:
+                                dev.status = "offline"
+                                dev.agent_status = "offline"
+                                logger.info(f"[Heartbeat] {dev.hostname or dev.ip_address} marked offline (last seen: {dev.last_seen})")
+                                devices_to_broadcast.append(schemas.DeviceSchema.from_orm(dev).dict())
+                            await session.commit()
+                    break # Success, exit retry loop
+                except Exception as e:
+                    if "locked" in str(e).lower():
+                        logger.debug(f"[Heartbeat] DB locked, retrying {attempt+1}/5...")
+                        await asyncio.sleep(0.5)
+                    else:
+                        logger.error(f"[Heartbeat] Error in monitor: {e}")
+                        break
+
+            # Broadcast AFTER session block closes and DB lock is released
+            for dev_dict in devices_to_broadcast:
+                try:
+                    await manager.broadcast({"type": "device_update", "device": dev_dict})
+                except Exception as e:
+                    logger.error(f"[Heartbeat] Broadcast failed: {e}")
 
     asyncio.create_task(_heartbeat_monitor())
-    logger.info(f"IntranetAdmin ready. Initial IP: {_SERVER_IP}. Ethernet resolving in background...")
 
+    # ── Periodic ARP subnet scanner: keep non-agent devices' online status updated
+    async def _subnet_scanner():
+        """
+        Periodically ARP-scan the resolved subnet and upsert discovered hosts.
+        Determines the primary 'status' (online/offline) for ALL devices based
+        strictly on network reachability (ARP).
+        """
+        SCAN_INTERVAL = 10  # Very frequent for live network status
+        while True:
+            await asyncio.sleep(SCAN_INTERVAL)
+            devices_to_broadcast = []
+            for attempt in range(5):
+                try:
+                    if not SUBNET_TO_SCAN:
+                        break # exit retry
+                    loop = asyncio.get_event_loop()
+                    pool = _SCAN_POOL or _PPE(max_workers=1)
+                    discovered = await loop.run_in_executor(pool, _run_scan_sync, SUBNET_TO_SCAN)
+                    
+                    async with async_session() as session:
+                        saved = await upsert_scanned_devices(discovered, session)
+                        discovered_ips = {item.get('ip') for item in saved}
+
+                        result = await session.execute(select(models.Device))
+                        all_devices = result.scalars().all()
+                        updated = []
+                        now = datetime.utcnow()
+                        for dev in all_devices:
+                            if not dev.ip_address:
+                                continue
+
+                            is_online = dev.ip_address in discovered_ips
+
+                            if is_online and dev.status != 'online':
+                                dev.status = 'online'
+                                try:
+                                    if not dev.last_seen or (now - dev.last_seen).total_seconds() > 1:
+                                        dev.last_seen = now
+                                except Exception:
+                                    dev.last_seen = now
+                                updated.append(dev)
+                            elif (not is_online) and (not dev.has_agent) and dev.status != 'offline':
+                                dev.status = 'offline'
+                                updated.append(dev)
+
+                        if updated:
+                            for d in updated:
+                                devices_to_broadcast.append(schemas.DeviceSchema.from_orm(d).dict())
+                            await session.commit()
+                    break # Success
+                except Exception as e:
+                    if "locked" in str(e).lower():
+                        logger.debug(f"[SubnetScanner] DB locked, retrying {attempt+1}/5...")
+                        await asyncio.sleep(0.5)
+                    else:
+                        logger.error(f"[SubnetScanner] Error during periodic scan: {e}")
+                        break
+            
+            # Broadcast AFTER session block closes and DB lock is released
+            for dev_dict in devices_to_broadcast:
+                try:
+                    await manager.broadcast({'type': 'device_update', 'device': dev_dict})
+                except Exception as e:
+                    logger.error(f"[SubnetScanner] Broadcast failed: {e}")
+
+    asyncio.create_task(_subnet_scanner())
+    logger.info(f"IntranetAdmin ready. Initial IP: {_SERVER_IP}. Ethernet resolving in background...")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     if _SCAN_POOL:
         _SCAN_POOL.shutdown(wait=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    logger.info(f"Starting Uvicorn explicitly bound to 0.0.0.0")
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

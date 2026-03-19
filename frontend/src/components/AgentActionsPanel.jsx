@@ -294,6 +294,7 @@ const AgentActionsPanel = ({ device, onDelete, onRefresh, compact = false, inven
                 >
                     {t('device.remoteControl')}
                 </Button>
+                {/* Removed per-device Ping button: availability is now handled by a background ARP scanner */}
             </div>
 
             {/* ── Applications installées (remplace Inventaire) ── */}
@@ -314,24 +315,9 @@ const AgentActionsPanel = ({ device, onDelete, onRefresh, compact = false, inven
                 </Button>
             </div>
 
-
-            {/* ── Danger Zone ── */}
-            {!isServer && (
-                <>
-                    <Divider style={{ borderColor: 'rgba(255,77,79,0.2)', margin: '14px 0 10px' }} />
-                    <Button
-                        block danger icon={<DeleteOutlined />}
-                        onClick={handleDelete}
-                        style={{ fontWeight: 700, height: 40 }}
-                    >
-                        🗑️ {t('common.deleted')}
-                    </Button>
-                </>
-            )}
-
             {/* ── Password Modal ── */}
             <Modal
-                title={<span style={{ color: '#faad14' }}>🔑 {t('device.changePassword')} — {device.label}</span>}
+                title={<span style={{ color: '#faad14' }}>🔑 {t('device.changePassword')} — {device.label || device.hostname || device.ip_address || "Device"}</span>}
                 open={pwdModal}
                 onOk={handlePasswordReset}
                 onCancel={() => { setPwdModal(false); setPwdNew(''); setPwdNew2(''); }}

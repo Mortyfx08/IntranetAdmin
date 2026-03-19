@@ -5,3 +5,4 @@ pydantic
 scapy
 python-multipart
 bcrypt
+psutil

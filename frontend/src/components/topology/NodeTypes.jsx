@@ -1,6 +1,7 @@
 import React from 'react';
 import { Handle, Position } from 'reactflow';
 import { Monitor, Server, Network, Laptop, Shield, WifiOff, Cpu, Users } from 'lucide-react';
+import { Tooltip } from 'antd';
 
 // ─── Shared pulse-dot CSS (injected once) ────────────────────────────────────
 const injectNodeCSS = (() => {
@@ -165,13 +166,17 @@ export const PCNode = ({ data, selected }) => {
     injectNodeCSS();
 
     const isOnline = data.status === 'online';
+    const isAgentUp = data.agent_status === 'online';
     const isIsolated = data.is_isolated;
 
-    // Status color — green/grey/red based on actual connectivity
-    const statusColor = isIsolated ? '#ff4d4f' : isOnline ? '#4ade80' : '#6b7280';
+    // Network Status color (ARP) — green/grey/red
+    const networkStatusColor = isIsolated ? '#ff4d4f' : isOnline ? '#4ade80' : '#6b7280';
+
+    // Agent Status color — cyan/orange
+    const agentStatusColor = isAgentUp ? '#22d3ee' : '#f97316';
 
     // Accent color — inherited from service or devision
-    const accentColor = data.service_color || (data.color && data.color !== '#52c41a' && data.color !== '#8c8c8c' ? data.color : statusColor);
+    const accentColor = data.service_color || (data.color && data.color !== '#52c41a' && data.color !== '#8c8c8c' ? data.color : networkStatusColor);
 
     const Icon = isIsolated ? WifiOff : Monitor;
 
@@ -192,7 +197,7 @@ export const PCNode = ({ data, selected }) => {
             cursor: 'pointer',
         }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                <PulseDot color={statusColor} active={isOnline && !isIsolated} size={6} />
+                <PulseDot color={networkStatusColor} active={isOnline && !isIsolated} size={6} />
                 <Icon size={16} color={accentColor} style={{ flexShrink: 0 }} />
             </div>
 

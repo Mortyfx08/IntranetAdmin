@@ -37,9 +37,16 @@ const DeviceDrawer = ({ device, onClose, onUpdate, getContainer }) => {
                             {device.label || device.hostname || device.ip_address}
                         </div>
                         <Space size={4} style={{ marginTop: 2 }}>
-                            <Tag color={device.status === 'online' ? 'green' : 'default'} style={{ borderRadius: '6px', fontWeight: 'bold' }}>
-                                {device.status === 'online' ? t('device.agentUp') : t('device.agentDown')}
-                            </Tag>
+                            <Tooltip title={device.status === 'online' ? "NETWORK UP: Device responded to ARP ping." : "NETWORK DOWN: Device is unreachable via ARP."}>
+                                <Tag color={device.status === 'online' ? 'green' : 'default'} style={{ borderRadius: '6px', fontWeight: 'bold', fontSize: '11px' }}>
+                                    {device.status === 'online' ? 'NETWORK UP' : 'NETWORK DOWN'}
+                                </Tag>
+                            </Tooltip>
+                            <Tooltip title={device.agent_status === 'online' ? "AGENT UP: The agent process is running on that device and checking in." : "AGENT DOWN: The agent is not responding or offline."}>
+                                <Tag color={device.agent_status === 'online' ? 'cyan' : 'orange'} style={{ borderRadius: '6px', fontWeight: 'bold', fontSize: '11px' }}>
+                                    {device.agent_status === 'online' ? 'AGENT UP' : 'AGENT DOWN'}
+                                </Tag>
+                            </Tooltip>
                             {device.is_isolated && <Tag color="error" style={{ borderRadius: 4, fontSize: 10, fontWeight: 700, border: 'none' }}>ISOLÉ</Tag>}
                         </Space>
                     </div>
@@ -93,12 +100,12 @@ const DeviceDrawer = ({ device, onClose, onUpdate, getContainer }) => {
                     <InfoCircleOutlined /> {t('device.details').toUpperCase()}
                 </div>
                 {[
-                    [t('dashboard.ipAddress'), device.ip_address, <Wifi size={14} />],
-                    ['MAC', device.mac_address || device.id, <Shield size={14} />],
-                    [t('dashboard.hostname'), device.hostname || device.label, <Monitor size={14} />],
-                    [t('dashboard.osVersion'), device.os_version, <Cpu size={14} />],
-                    [t('dashboard.userName'), device.user_name, <User size={14} />],
-                ].filter(([, v]) => v).map(([k, v, icon]) => (
+                    [t('dashboard.ipAddress'), device.ip_address || "—", <Wifi size={14} />],
+                    ['MAC', device.mac_address || device.id || "—", <Shield size={14} />],
+                    [t('dashboard.hostname'), device.hostname || device.label || "—", <Monitor size={14} />],
+                    [t('dashboard.osVersion'), device.os_version || "—", <Cpu size={14} />],
+                    [t('dashboard.userName'), device.user_name || "—", <User size={14} />],
+                ].map(([k, v, icon]) => (
                     <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 13 }}>
                         <span style={{ color: 'rgba(255,255,255,0.35)', display: 'flex', alignItems: 'center', gap: 6 }}>{icon} {k}</span>
                         <span style={{ color: '#fff', fontFamily: 'monospace', opacity: 0.9 }}>{v}</span>

@@ -204,12 +204,20 @@ const Services = () => {
         },
         {
             title: t('device.status'),
-            dataIndex: 'status',
             key: 'status',
-            render: status => (
-                <Tag color={status === 'online' ? 'green' : 'default'} style={{ borderRadius: 4, fontWeight: 'bold' }}>
-                    {status === 'online' ? '🟢 AGENT UP' : '⚫ AGENT DOWN'}
-                </Tag>
+            render: (_, record) => (
+                <Space direction="vertical" size={2}>
+                    <Tooltip title={record.status === 'online' ? "NETWORK UP: Device responded to ARP ping." : "NETWORK DOWN: Device is unreachable via ARP."}>
+                        <Tag color={record.status === 'online' ? 'green' : 'default'} style={{ borderRadius: 4, fontWeight: 'bold', fontSize: '10px', width: '95px', textAlign: 'center' }}>
+                            {record.status === 'online' ? '🟢 NET UP' : '⚫ NET DOWN'}
+                        </Tag>
+                    </Tooltip>
+                    <Tooltip title={record.agent_status === 'online' ? "AGENT UP: The agent process is running on that device and checking in." : "AGENT DOWN: The agent is not responding or offline."}>
+                        <Tag color={record.agent_status === 'online' ? 'cyan' : 'orange'} style={{ borderRadius: 4, fontWeight: 'bold', fontSize: '10px', width: '95px', textAlign: 'center' }}>
+                            {record.agent_status === 'online' ? '🟢 AGENT UP' : '⚫ AGENT DOWN'}
+                        </Tag>
+                    </Tooltip>
+                </Space>
             )
         },
         {
@@ -219,7 +227,12 @@ const Services = () => {
             render: (_, record) => (
                 <Space>
                     <Button type="primary" ghost size="small" icon={<SettingOutlined />}
-                        onClick={e => { e.stopPropagation(); setSelectedDeviceId(record.mac_address); }}
+                        onClick={e => { 
+                            e.stopPropagation(); 
+                            if (record && record.mac_address) {
+                                setSelectedDeviceId(record.mac_address); 
+                            }
+                        }}
                     >Gérer</Button>
                     <Popconfirm title="Retirer du service ?" onConfirm={() => handleAssignDevice(record.mac_address, null)}>
                         <Button type="text" size="small" danger icon={<DeleteOutlined />} />
@@ -388,7 +401,11 @@ const Services = () => {
                                                     size="small"
                                                     className="inner-table"
                                                     onRow={record => ({
-                                                        onClick: () => setSelectedDeviceId(record.mac_address),
+                                                        onClick: () => {
+                                                            if (record && record.mac_address) {
+                                                                setSelectedDeviceId(record.mac_address);
+                                                            }
+                                                        },
                                                         style: { cursor: 'pointer' }
                                                     })}
                                                 />
@@ -548,8 +565,14 @@ const Services = () => {
             <DeviceDrawer
                 key={selectedDeviceId || 'none'}
                 device={(() => {
+                    if (!selectedDeviceId) return null;
                     const d = devices.find(dev => dev.mac_address === selectedDeviceId);
-                    return d ? { ...d, label: d.hostname } : null;
+                    if (!d) return null;
+                    return { 
+                        ...d, 
+                        label: d.hostname || d.ip_address || "Unknown",
+                        id: d.mac_address // Ensure DeviceDrawer/AgentActionsPanel can use 'id' as MAC
+                    };
                 })()}
                 onClose={() => setSelectedDeviceId(null)}
                 onUpdate={fetchData}

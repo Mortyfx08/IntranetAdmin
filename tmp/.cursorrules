@@ -1,0 +1,47 @@
+# 🛡️ IntraAdmin Elite Cursor Rules (v2.0)
+
+# 🗺️ PROJECT STRUCTURE & CONTEXT MAP
+- **Strict Directory Hierarchy:** - `backend/`: FastAPI/Python (Orchestrator).
+    - `frontend/`: React 19/Vite (Console).
+    - `agent_source/`: Go (Sentinel).
+    - `static/`: Pre-compiled binaries/Assets.
+- **Reference First:** Read `project_map.txt` and `CSS_MASTER.md` BEFORE generating any code.
+
+## 🛠️ Token Optimization (Ultra-Efficiency)
+- **Modular Edits:** Never rewrite whole files. Use `// ... existing code` for unchanged sections.
+- **Context Pinning:** If I use `Alt+Enter`, only focus on attached files. 
+- **Verbose Terminal Control:** Do not read full terminal logs unless an error is explicitly highlighted (Ctrl+Shift+L).
+- **Style Referencing:** Never generate new Glassmorphism CSS. Always reference variables from `CSS_MASTER.md`.
+- **Logic Over Layout:** Provide JSX logic and logic-flow; assume I handle the decorative HTML wrapping unless asked.
+
+## 🌐 Network & Interface Logic (STRICT)
+- **Physical Interface Priority:** Discovery logic MUST bypass `127.0.0.1` and Wi-Fi. 
+- **Hard-Coded Exclusion:** Ignore adapters containing: `Virtual`, `Hyper-V`, `vEthernet`, `WSL`, `Docker`.
+- **Speed Filter:** Only select interfaces with `psutil.net_if_stats()` where `speed > 100` and `isup == True`.
+- **Binding:** Bind FastAPI/Uvicorn to the detected **Physical IPv4** only.
+
+## 🏗️ Backend Guardrails (FastAPI)
+- **Async Execution:** Use `AsyncSession`. No synchronous blocking calls in routes.
+- **Persistence Mastery:** Every `POST` or `PUT` for "Services" or "Departments" MUST call `db.commit()` and `db.refresh()`.
+- **Safety:** Hard ban on `Base.metadata.drop_all()`. Use `create_all()` logic only.
+- **Scanning:** Ensure `backend/scanner.py` verifies Npcap installation via `scapy.arch.windows` before execution.
+
+## 🎨 Frontend & UI (React)
+- **i18n & RTL:** Support EN/FR/AR. If language is `ar`, apply `dir="rtl"` to the root container and flip sidebar/margins.
+- **Topology Canvas:** Use `nodeCanvasObject` in `react-force-graph-2d`. 
+    - Online: Radial Gradient glow (0.6 alpha pulse).
+    - Offline: Grayscale/Dimmed state.
+- **Zero-Download RDP:** Use `window.location.assign('rdp://...')` protocol handlers. Never generate `.rdp` files.
+
+## 🤖 Agent Sentinel (Go)
+- **Footprint:** Static binaries only. Max 5MB RAM usage.
+- **Persistence:** Use Registry hooks for RDP toggling (`fDenyTSConnections`).
+- **Jitter:** Implement a 60s ± 5s heartbeat to prevent server-side token/request spikes.
+
+## 📂 Project-Specific Naming
+- **Components:** PascalCase (`NetworkMap.jsx`).
+- **Endpoints:** kebab-case (`/api/v2/remote-control`).
+- **Database:** snake_case (`service_id`).
+
+## 🛑 Terminal Output Management
+- When suggesting terminal commands, append flags to minimize output (e.g., `-q`, `--summary`, or `> nul`) to prevent AI context overflow from long logs.

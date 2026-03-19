@@ -56,7 +56,6 @@ const Dashboard = () => {
                     const mergedNodes = nodes.map(n => {
                         const existing = existingNodes.get(n.id);
                         if (existing) {
-                            // Preserve physics coordinates, but update all metrics (status, CPU, RAM)
                             return { ...n, x: existing.x, y: existing.y, vx: existing.vx, vy: existing.vy, fx: existing.fx, fy: existing.fy };
                         }
                         return n;
@@ -66,7 +65,7 @@ const Dashboard = () => {
             }
             setServices(servicesRes.data);
 
-            const devices = mapRes.data.nodes.filter(n => n.group === 3);
+            const devices = mapRes.data.nodes.filter(n => (n.group === 3 || n.group === 1));
             const totalCpu = devices.reduce((acc, d) => acc + (d.cpu_usage || 0), 0);
             const totalRam = devices.reduce((acc, d) => acc + (d.ram_usage || 0), 0);
             setStats({
@@ -82,10 +81,31 @@ const Dashboard = () => {
         }
     }, []);
 
+    // WebSocket for global live updates
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 3000); // 3s poll for fast real-time sync
-        return () => clearInterval(interval);
+        let ws;
+        let retryTimer;
+
+        const connect = () => {
+            const wsUrl = `ws://${window.location.hostname}:8000/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'device_update' || msg.type === 'topology_refresh') {
+                    fetchData(); // Simple global refresh on any change for consistency
+                }
+            };
+            ws.onclose = () => {
+                retryTimer = setTimeout(connect, 3000);
+            };
+        };
+        connect();
+        return () => {
+            clearTimeout(retryTimer);
+            ws?.close();
+        };
     }, [fetchData]);
 
     useEffect(() => {
@@ -99,13 +119,10 @@ const Dashboard = () => {
 
     const handleNodeClick = useCallback((node) => {
         if (!node) return;
-        if (node.group === 3 || node.group === 1) {
-            setSelectedNodeId(node.id);
-            setSelectedDevice(node);
-        }
-        if (graphRef.current) {
-            graphRef.current.centerAt?.(node.x, node.y, 1000);
-            graphRef.current.zoom?.(node.group === 3 ? 3 : 2, 1000);
+        const normalizedNode = node.data ? node.data : node;
+        if (normalizedNode.group === 3 || normalizedNode.group === 1) {
+            setSelectedNodeId(normalizedNode.id);
+            setSelectedDevice(normalizedNode);
         }
     }, [setSelectedNodeId]);
 
@@ -114,7 +131,7 @@ const Dashboard = () => {
         if (selectedDevice) {
             const updatedNode = graphData.nodes.find(n => n.id === selectedDevice.id);
             if (updatedNode && JSON.stringify(updatedNode) !== JSON.stringify(selectedDevice)) {
-                setSelectedDevice(updatedNode);
+                setSelectedDevice({ ...updatedNode });
             }
         }
     }, [graphData.nodes, selectedDevice]);
@@ -185,9 +202,18 @@ const Dashboard = () => {
             title: t('device.status'),
             key: 'status',
             render: (_, record) => (
-                <Tag color={record.status === 'online' ? 'green' : 'default'} style={{ fontWeight: 'bold' }}>
-                    {record.status === 'online' ? (t('device.agentUp') || 'AGENT UP') : (t('device.agentDown') || 'AGENT DOWN')}
-                </Tag>
+                <Space direction="vertical" size={2}>
+                    <Tooltip title={record.status === 'online' ? "NETWORK UP: Device responded to ARP ping." : "NETWORK DOWN: Device is unreachable via ARP."}>
+                        <Tag color={record.status === 'online' ? 'green' : 'default'} style={{ fontWeight: 'bold', fontSize: '10px', width: '90px', textAlign: 'center' }}>
+                            {record.status === 'online' ? 'NETWORK UP' : 'NETWORK DOWN'}
+                        </Tag>
+                    </Tooltip>
+                    <Tooltip title={record.agent_status === 'online' ? "AGENT UP: The agent process is running on that device and checking in." : "AGENT DOWN: The agent is not responding or offline."}>
+                        <Tag color={record.agent_status === 'online' ? 'cyan' : 'orange'} style={{ fontWeight: 'bold', fontSize: '10px', width: '90px', textAlign: 'center' }}>
+                            {record.agent_status === 'online' ? 'AGENT UP' : 'AGENT DOWN'}
+                        </Tag>
+                    </Tooltip>
+                </Space>
             )
         },
         {

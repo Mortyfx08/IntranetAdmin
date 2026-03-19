@@ -60,7 +60,8 @@ class Device(Base):
     usb_ports_blocked = Column(Boolean, default=False)
     is_isolated = Column(Boolean, default=False)
     rdp_enabled = Column(Boolean, default=False)
-    has_agent = Column(Boolean, default=False)  # True only when device has reported via the agent
+    has_agent = Column(Boolean, default=False)
+    agent_status = Column(String, default="offline")
     group_tag = Column(String, nullable=True) # e.g. "GMI", "GCS"
     saved_password = Column(String, nullable=True)
     
@@ -109,3 +110,10 @@ class TopologyPosition(Base):
     node_id = Column(String, primary_key=True, index=True)
     x = Column(Integer)
     y = Column(Integer)
+
+class ServerSettings(Base):
+    __tablename__ = "server_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    setting_key = Column(String, unique=True, index=True)
+    setting_value = Column(String)

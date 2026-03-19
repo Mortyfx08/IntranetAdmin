@@ -70,6 +70,7 @@ class AgentReport(BaseModel):
     usb_ports_blocked: bool = False
     is_isolated: bool = False
     rdp_enabled: bool = False
+    agent_status: str = "offline"
 
 class InventoryReport(BaseModel):
     mac_address: str
@@ -80,6 +81,7 @@ class DeviceSchema(AgentReport):
     last_seen: datetime
     service_id: Optional[int] = None
     saved_password: Optional[str] = None
+    has_agent: bool = False
     
     class Config:
         from_attributes = True
@@ -113,8 +115,9 @@ class NetworkNode(BaseModel):
     groupement_color: Optional[str] = None
     saved_password: Optional[str] = None
     is_isolated: Optional[bool] = None
+    has_agent: Optional[bool] = None
+    agent_status: Optional[str] = None
     service_color: Optional[str] = None
-    mac_address: Optional[str] = None
     # DB integer id for device nodes (needed for RDP revoke etc.)
     device_id: Optional[int] = None
     # Position persistence

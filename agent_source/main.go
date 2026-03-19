@@ -22,7 +22,7 @@ import (
 // Config
 const (
 	SharedSecret   = "netsentry-secret"
-	DefaultServer  = "http://193.3.100.207:8000/api/report"
+	DefaultServer  = "http://192.168.0.18:8000/api/report"
 	NormalInterval = 5 * time.Second
 	FastInterval   = 1 * time.Second // For rapid updates after action
 )
